@@ -9557,6 +9557,8 @@ void ObjectMgr::LoadActiveEntities(Map* _map)
     }
 
     // Load Transports on Map _map
+    sMapMgr.CreateTransportsOnMap(_map);
+    // ForceLoadGrid?
 }
 
 void ObjectMgr::LoadNpcGossips()

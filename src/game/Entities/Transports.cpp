@@ -50,68 +50,56 @@ void MapManager::LoadTransports()
     {
         bar.step();
 
-        Transport* t = new Transport;
-
         Field* fields = result->Fetch();
 
         uint32 entry = fields[0].GetUInt32();
         std::string name = fields[1].GetCppString();
-        t->m_period = fields[2].GetUInt32();
+        uint32 period = fields[2].GetUInt32();
 
         const GameObjectInfo* goinfo = ObjectMgr::GetGameObjectInfo(entry);
 
         if (!goinfo)
         {
             sLog.outErrorDb("Transport ID:%u, Name: %s, will not be loaded, gameobject_template missing", entry, name.c_str());
-            delete t;
             continue;
         }
 
         if (goinfo->type != GAMEOBJECT_TYPE_MO_TRANSPORT)
         {
             sLog.outErrorDb("Transport ID:%u, Name: %s, will not be loaded, gameobject_template type wrong", entry, name.c_str());
-            delete t;
             continue;
         }
 
-        // sLog.outString("Loading transport %d between %s, %s", entry, name.c_str(), goinfo->name);
+        uint32 pathid = goinfo->moTransport.taxiPathId;
 
-        std::set<uint32> mapsUsed;
-
-        if (!t->GenerateWaypoints(goinfo->moTransport.taxiPathId, mapsUsed))
-            // skip transports with empty waypoints list
+        if (pathid >= sTaxiPathNodesByPath.size())
         {
             sLog.outErrorDb("Transport (path id %u) path size = 0. Transport ignored, check DBC files or transport GO data0 field.", goinfo->moTransport.taxiPathId);
-            delete t;
             continue;
         }
 
-        float x = t->m_WayPoints[0].x; float y = t->m_WayPoints[0].y; float z = t->m_WayPoints[0].z; uint32 mapid = t->m_WayPoints[0].mapid; float o = 1;
-
-        // current code does not support transports in dungeon!
-        const MapEntry* pMapInfo = sMapStore.LookupEntry(mapid);
-        if (!pMapInfo || pMapInfo->Instanceable())
+        TaxiPathNodeList const& nodeList = sTaxiPathNodesByPath[pathid];
+        if (nodeList.size() == 0)
         {
-            delete t;
+            sLog.outErrorDb("Transport (path id %u) path size = 0. Transport ignored, check DBC files or transport GO data0 field.", goinfo->moTransport.taxiPathId);
             continue;
         }
 
-        // creates the Gameobject
-        if (!t->Create(entry, mapid, x, y, z, o, GO_ANIMPROGRESS_DEFAULT, 0))
-        {
-            delete t;
-            continue;
-        }
+        uint32 mapid = nodeList[0]->mapid;
 
-        m_Transports.insert(t);
+        TransportInfo* ti = new TransportInfo(entry, name, period, mapid, pathid);
 
-        for (uint32 i : mapsUsed)
-            m_TransportsByMap[i].insert(t);
+        // set spawning position info from the first waypoint in the path
+        ti->pos.x = nodeList[0]->x;
+        ti->pos.y = nodeList[0]->y;
+        ti->pos.z = nodeList[0]->z;
+        ti->pos.o = 1.0;
 
-        // If we someday decide to use the grid to track transports, here:
-        t->SetMap(sMapMgr.CreateMap(mapid, t));
+        // stash TransportInfos for later creation of the transports in
+        // world maps and instances of maps
+        m_TransportInfos.insert(ti);
+        m_TransportInfosByMap[mapid].insert(ti);
 
-        // t->GetMap()->Add<GameObject>((GameObject *)t);
         ++count;
     }
     while (result->NextRow());
@@ -137,6 +125,47 @@ void MapManager::LoadTransports()
 
     sLog.outString(">> Loaded %u transports", count);
     sLog.outString();
+}
+
+void MapManager::CreateTransportsOnMap(Map* map)
+{
+    // no transports on this map?
+    if (m_TransportInfosByMap.find(map->GetId()) == m_TransportInfosByMap.end())
+        return;
+
+    for (auto ti : m_TransportInfosByMap[map->GetId()])
+    {
+        Transport* t = new Transport;
+        t->m_period = ti->period;
+
+        std::set<uint32> mapsUsed;
+
+        // skip transports with empty waypoints list
+        if (!t->GenerateWaypoints(ti->pathid, mapsUsed))
+        {
+            sLog.outErrorDb("Transport (path id %u) path size = 0. Transport not created, check DBC files or transport GO data0 field.", ti->pathid);
+            delete t;
+            continue;
+        }
+
+        // creates the Gameobject
+        if (!t->Create(ti->entry, map->GetId(), ti->pos.x, ti->pos.y, ti->pos.z, ti->pos.o, GO_ANIMPROGRESS_DEFAULT, 0))
+        {
+            delete t;
+            continue;
+        }
+
+        m_Transports.insert(t);
+
+        for (uint32 i : mapsUsed)
+            m_TransportsByMap[i].insert(t);
+
+        // link transport to the map on which it spawns (its first waypoint)
+        t->SetMap(map);
+
+        // add the transport to world
+        t->AddToWorld();
+    }
 }
 
 Transport::Transport() : GameObject(), m_pathTime(0), m_timer(0), m_nextNodeTime(0), m_period(0)

@@ -95,9 +95,9 @@ Map* MapManager::CreateMap(uint32 id, const WorldObject* obj)
         return nullptr;
 
     Map* m;
-    if (entry->Instanceable())
+    if (entry->Instanceable() && obj->GetTypeId() == TYPEID_PLAYER)
     {
-        MANGOS_ASSERT(obj && obj->GetTypeId() == TYPEID_PLAYER);
+        // MANGOS_ASSERT(obj && obj->GetTypeId() == TYPEID_PLAYER);
         // create DungeonMap object
         m = CreateInstance(id, (Player*)obj);
         // Load active objects for this map

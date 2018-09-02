@@ -130,6 +130,27 @@ class MapManager : public MaNGOS::Singleton<MapManager, MaNGOS::ClassLevelLockab
         void RemoveAllObjectsInRemoveList();
 
         void LoadTransports();
+        void CreateTransportsOnMap(Map* map);
+
+        struct TransportInfo
+        {
+            explicit TransportInfo(uint32 entry, std::string name = "",
+                uint32 period = 0, uint32 mapid = 0, uint32 pathid = 0) :
+                entry(entry), name(name), period(period), mapid(mapid), pathid(pathid) {}
+
+            uint32 entry;
+            std::string name;
+            uint32 period;
+            uint32 pathid;
+            uint32 mapid;
+            Position pos;
+        };
+
+        typedef std::set<TransportInfo*> TransportInfoSet;
+        TransportInfoSet m_TransportInfos;
+
+        typedef std::map<uint32, TransportInfoSet> TransportInfoMap;
+        TransportInfoMap m_TransportInfosByMap;
 
         typedef std::set<Transport*> TransportSet;
         TransportSet m_Transports;
